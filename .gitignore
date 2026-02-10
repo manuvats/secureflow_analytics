@@ -1,0 +1,222 @@
+# SecureFlow Analytics - .gitignore
+
+# ============================================================================
+# DATA FILES - NEVER COMMIT LARGE DATA
+# ============================================================================
+# Raw data files
+data/
+*.parquet
+*.csv
+*.xlsx
+*.xls
+*.json
+*.db
+*.sqlite
+*.duckdb
+
+# Specific data directories
+/data/raw/
+/data/processed/
+/data/warehouse/
+
+# ============================================================================
+# PYTHON
+# ============================================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+secureflow/
+secureflow_env/
+
+# ============================================================================
+# JUPYTER NOTEBOOKS
+# ============================================================================
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Jupyter metadata
+.jupyter/
+*.ipynb_meta
+
+# Notebook outputs (optional - remove if you want to commit outputs)
+# *_output.ipynb
+
+# ============================================================================
+# IDE / EDITOR
+# ============================================================================
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ============================================================================
+# OPERATING SYSTEM
+# ============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# ============================================================================
+# LOGS AND TEMPORARY FILES
+# ============================================================================
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Application logs
+logs/
+*.log.*
+
+# ============================================================================
+# ENVIRONMENT AND SECRETS
+# ============================================================================
+.env
+.env.local
+.env.*.local
+secrets.py
+config_local.py
+credentials.json
+*.key
+*.pem
+
+# API keys
+api_keys.txt
+.apikey
+
+# ============================================================================
+# MODEL ARTIFACTS
+# ============================================================================
+# Machine learning models
+models/
+*.h5
+*.pkl
+*.pickle
+*.joblib
+*.pt
+*.pth
+*.ckpt
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# ============================================================================
+# PLOTS AND VISUALIZATIONS
+# ============================================================================
+# Generated plots (optional - remove if you want to commit)
+plots/
+figures/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf
+*.svg
+
+# ============================================================================
+# DOCUMENTATION BUILDS
+# ============================================================================
+docs/_build/
+site/
+
+# ============================================================================
+# TESTING
+# ============================================================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ============================================================================
+# PROJECT SPECIFIC
+# ============================================================================
+# Temporary notebooks
+scratch/
+temp_notebooks/
+test_*.ipynb
+
+# Output files
+outputs/
+results/
+
+# Cache directories
+.cache/
+cache/
+
+# ============================================================================
+# KEEP THESE (Explicitly allow)
+# ============================================================================
+# Keep empty directories
+!data/.gitkeep
+!models/.gitkeep
+!logs/.gitkeep
+
+# Keep documentation
+!docs/
+!*.md
+!README.md
+
+# Keep source code
+!src/
+!*.py
+
+# Keep example notebooks (but not outputs)
+!notebooks/*.ipynb
+
+# Keep requirements
+!requirements.txt
+!pyproject.toml
+!environment.yml
