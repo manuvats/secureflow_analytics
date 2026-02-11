@@ -84,9 +84,11 @@ def calculate_funnel(
     
     # Calculate conversion rates
     for i in range(1, len(funnel_steps)):
-        df[f'step_{i-1}_to_{i}_rate'] = (df[f'step_{i}_users'] / df[f'step_0_users'] * 100).round(2)
-        if i > 1:
-            df[f'step_{i-1}_to_{i}_incremental'] = (df[f'step_{i}_users'] / df[f'step_{i-1}_users'] * 100).round(2)
+        # Overall rate from step 0
+        df[f'step_0_to_{i}_rate'] = (df[f'step_{i}_users'] / df[f'step_0_users'] * 100).round(2)
+        
+        # Incremental rate from previous step
+        df[f'step_{i-1}_to_{i}_incremental'] = (df[f'step_{i}_users'] / df[f'step_{i-1}_users'] * 100).round(2)
     
     # Add step names
     step_mapping = {f'step_{i}_users': step_name for i, (step_name, _) in enumerate(funnel_steps)}
@@ -101,13 +103,21 @@ def calculate_time_to_convert(
     segment_by: Optional[str] = None
 ) -> pd.DataFrame:
     """
-    Calculate time between two events (e.g., sign_up to first_scan).
+    Calculate time between two events (e.g., app_open to upgrade_clicked).
+    
+    Args:
+        con: DuckDB connection
+        start_event: Starting event type
+        end_event: Ending event type
+        segment_by: Optional column to segment by (e.g., 'country', 'acquisition_channel')
     
     Returns:
         DataFrame with median/percentile time to convert
     """
+    # Build segment join within the time_diffs CTE
     segment_join = ""
-    segment_select = ""
+    segment_select_in_cte = ""
+    segment_select_final = ""
     segment_group = ""
     
     if segment_by:
@@ -115,8 +125,9 @@ def calculate_time_to_convert(
         LEFT JOIN read_parquet('{config.USERS_FILE}') u
             ON start_events.user_id = u.user_id
         """
-        segment_select = f"u.{segment_by},"
-        segment_group = f"u.{segment_by},"
+        segment_select_in_cte = f"u.{segment_by},"  # In CTE, reference as u.column
+        segment_select_final = f"{segment_by},"      # In final SELECT, just column name
+        segment_group = f"{segment_by},"             # In GROUP BY, just column name
     
     query = f"""
     WITH start_events AS (
@@ -138,20 +149,22 @@ def calculate_time_to_convert(
     time_diffs AS (
         SELECT 
             start_events.user_id,
+            {segment_select_in_cte}
             EXTRACT(EPOCH FROM (end_events.end_time - start_events.start_time)) / 86400.0 as days_to_convert
         FROM start_events
-        INNER JOIN end_events ON start_events.user_id = end_events.user_id
+        INNER JOIN end_events 
+            ON start_events.user_id = end_events.user_id
+        {segment_join}
         WHERE end_events.end_time > start_events.start_time
     )
     SELECT 
-        {segment_select}
+        {segment_select_final}
         COUNT(*) as converted_users,
         ROUND(MEDIAN(days_to_convert), 2) as median_days,
         ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY days_to_convert), 2) as p25_days,
         ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY days_to_convert), 2) as p75_days,
         ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY days_to_convert), 2) as p90_days
     FROM time_diffs
-    {segment_join}
     {'GROUP BY ' + segment_group.rstrip(',') if segment_group else ''}
     """
     
@@ -166,7 +179,7 @@ def calculate_drop_off_reasons(
     Identify users who dropped off at each stage and analyze characteristics.
     
     Returns:
-        DataFrame with drop-off counts and potential reasons
+        DataFrame with drop-off counts, segment totals, and drop-off rates
     """
     results = []
     
@@ -189,21 +202,46 @@ def calculate_drop_off_reasons(
             SELECT user_id
             FROM completed_current
             WHERE user_id NOT IN (SELECT user_id FROM completed_next)
+        ),
+        current_with_segment AS (
+            SELECT 
+                cc.user_id,
+                u.country,
+                u.acquisition_channel
+            FROM completed_current cc
+            LEFT JOIN read_parquet('{config.USERS_FILE}') u
+                ON cc.user_id = u.user_id
+        ),
+        dropped_with_segment AS (
+            SELECT 
+                d.user_id,
+                u.country,
+                u.acquisition_channel
+            FROM dropped_users d
+            LEFT JOIN read_parquet('{config.USERS_FILE}') u
+                ON d.user_id = u.user_id
         )
         SELECT 
             '{funnel_steps[i][0]}' as dropped_at_stage,
-            COUNT(*) as dropped_users,
-            u.country,
-            u.acquisition_channel,
-            COUNT(*) as users_in_segment
-        FROM dropped_users d
-        LEFT JOIN read_parquet('{config.USERS_FILE}') u
-            ON d.user_id = u.user_id
-        GROUP BY u.country, u.acquisition_channel
-        ORDER BY users_in_segment DESC
+            COUNT(DISTINCT d.user_id) as dropped_users,
+            d.country,
+            d.acquisition_channel,
+            COUNT(DISTINCT c.user_id) as users_in_segment,
+            ROUND(COUNT(DISTINCT d.user_id) * 100.0 / COUNT(DISTINCT c.user_id), 2) as drop_off_rate
+        FROM dropped_with_segment d
+        LEFT JOIN current_with_segment c
+            ON d.country = c.country 
+            AND d.acquisition_channel = c.acquisition_channel
+        GROUP BY d.country, d.acquisition_channel
+        ORDER BY dropped_users DESC
         LIMIT 10
         """
         
-        results.append(con.execute(query).df())
+        df = con.execute(query).df()
+        results.append(df)
     
     return pd.concat(results, ignore_index=True)
+        
+    #results.append(con.execute(query).df())
+    
+    #return pd.concat(results, ignore_index=True)

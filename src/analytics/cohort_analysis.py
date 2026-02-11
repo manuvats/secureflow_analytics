@@ -31,20 +31,20 @@ def calculate_retention_cohorts(
     Returns:
         DataFrame with cohort retention percentages
     """
-    period_func = "DATE_TRUNC('week', CAST(created_at AS TIMESTAMP))" if cohort_period == 'week' else "DATE_TRUNC('month', CAST(created_at AS TIMESTAMP))"
+    period_func = "DATE_TRUNC('week', CAST(signup_date AS TIMESTAMP))" if cohort_period == 'week' else "DATE_TRUNC('month', CAST(signup_date AS TIMESTAMP))"
     
     query = f"""
     WITH user_cohorts AS (
         SELECT 
             user_id,
             {period_func} as cohort_period
-        FROM read_parquet(str(config.USERS_FILE))
+        FROM read_parquet('{config.USERS_FILE}')
     ),
     user_activity AS (
         SELECT 
             user_id,
-            {period_func.replace('created_at', 'timestamp')} as activity_period
-        FROM read_parquet(str(config.EVENTS_FILE))
+            {period_func.replace('signup_date', 'timestamp')} as activity_period
+        FROM read_parquet('{config.EVENTS_FILE}')
         WHERE event_type = '{activity_event}'
         GROUP BY user_id, activity_period
     ),
@@ -119,25 +119,25 @@ def compare_feature_adoption_retention(
     Returns:
         DataFrame with retention comparison
     """
-    period_func = "DATE_TRUNC('week', CAST(created_at AS TIMESTAMP))" if cohort_period == 'week' else "DATE_TRUNC('month', CAST(created_at AS TIMESTAMP))"
+    period_func = "DATE_TRUNC('week', CAST(signup_date AS TIMESTAMP))" if cohort_period == 'week' else "DATE_TRUNC('month', CAST(signup_date AS TIMESTAMP))"
     
     query = f"""
     WITH user_cohorts AS (
         SELECT 
             user_id,
             {period_func} as cohort_period
-        FROM read_parquet(str(config.USERS_FILE))
+        FROM read_parquet('{config.USERS_FILE}')
     ),
     feature_adopters AS (
         SELECT DISTINCT user_id
-        FROM read_parquet(str(config.FEATURE_USAGE_FILE))
-        WHERE feature_name = '{feature_name}' AND enabled = true
+        FROM read_parquet('{config.FEATURE_USAGE_FILE}')
+        WHERE feature_name = '{feature_name}'
     ),
     user_activity AS (
         SELECT 
             user_id,
-            {period_func.replace('created_at', 'timestamp')} as activity_period
-        FROM read_parquet(str(config.EVENTS_FILE))
+            {period_func.replace('signup_date', 'timestamp')} as activity_period
+        FROM read_parquet('{config.EVENTS_FILE}')
         WHERE event_type = 'scan_completed'
         GROUP BY user_id, activity_period
     ),
@@ -189,37 +189,40 @@ def calculate_ltv_by_cohort(
     Returns:
         DataFrame with cumulative revenue per cohort
     """
-    period_func = "DATE_TRUNC('month', CAST(created_at AS TIMESTAMP))"
+    period_func = "DATE_TRUNC('month', CAST(signup_date AS TIMESTAMP))"
     
     query = f"""
     WITH user_cohorts AS (
         SELECT 
             user_id,
             {period_func} as cohort_period
-        FROM read_parquet(str(config.USERS_FILE))
+        FROM read_parquet('{config.USERS_FILE}')
     ),
     subscription_revenue AS (
         SELECT 
             s.user_id,
             COALESCE(SUM(
-                CASE s.subscription_tier
+                CASE s.plan
                     WHEN 'free' THEN 0
-                    WHEN 'basic' THEN 4.99
-                    WHEN 'premium' THEN 9.99
-                    WHEN 'family' THEN 14.99
-                END * DATEDIFF('month', 
+                    WHEN 'premium_monthly' THEN 9.99
+                    WHEN 'premium_annual' THEN 99.99
+                    ELSE 0
+                END * GREATEST(DATEDIFF('month', 
                     CAST(s.start_date AS TIMESTAMP), 
                     COALESCE(CAST(s.end_date AS TIMESTAMP), CURRENT_DATE)
-                )
+                ), 1)
             ), 0) as total_revenue
-        FROM read_parquet(str(config.SUBSCRIPTIONS_FILE)) s
+        FROM read_parquet('{config.SUBSCRIPTIONS_FILE}') s
         GROUP BY s.user_id
     )
     SELECT 
         uc.cohort_period,
         COUNT(DISTINCT uc.user_id) as cohort_size,
+        COUNT(DISTINCT CASE WHEN sr.total_revenue > 0 THEN sr.user_id END) as paying_users,
         ROUND(AVG(COALESCE(sr.total_revenue, 0)), 2) as avg_ltv,
-        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY COALESCE(sr.total_revenue, 0)), 2) as median_ltv,
+        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY COALESCE(sr.total_revenue, 0)), 2) as median_ltv_all,
+        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sr.total_revenue) 
+              FILTER (WHERE sr.total_revenue > 0), 2) as median_ltv_paying,
         ROUND(SUM(COALESCE(sr.total_revenue, 0)), 2) as total_revenue
     FROM user_cohorts uc
     LEFT JOIN subscription_revenue sr ON uc.user_id = sr.user_id
@@ -241,7 +244,7 @@ def compare_channel_cohorts(
     Returns:
         DataFrame with retention by channel
     """
-    period_func = "DATE_TRUNC('week', CAST(created_at AS TIMESTAMP))"
+    period_func = "DATE_TRUNC('week', CAST(signup_date AS TIMESTAMP))"
     
     query = f"""
     WITH user_cohorts AS (
@@ -249,13 +252,13 @@ def compare_channel_cohorts(
             user_id,
             acquisition_channel,
             {period_func} as cohort_period
-        FROM read_parquet(str(config.USERS_FILE))
+        FROM read_parquet('{config.USERS_FILE}')
     ),
     user_activity AS (
         SELECT 
             user_id,
-            {period_func.replace('created_at', 'timestamp')} as activity_period
-        FROM read_parquet(str(config.EVENTS_FILE))
+            {period_func.replace('signup_date', 'timestamp')} as activity_period
+        FROM read_parquet('{config.EVENTS_FILE}')
         WHERE event_type = 'scan_completed'
         GROUP BY user_id, activity_period
     ),
